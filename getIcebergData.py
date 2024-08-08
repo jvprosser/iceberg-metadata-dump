@@ -17,13 +17,14 @@ spark = conn.get_spark_session()
 
 from pyspark.sql.functions import input_file_name
 
-argv_snap=5551603955198434466
-file="s3a://go01-demo/warehouse/tablespace/external/hive/fnb_bryce.db/metal/metadata/00008-94432d62-f212-40d7-ad82-16af39de508f.metadata.json"
-
+argv_snap=3027088866001259944
+#argv_snap=5551603955198434466
+file="s3a://go01-demo/warehouse/tablespace/external/hive/jing_airlines.db/flights/metadata/00005-09c2e8cd-1461-4388-9058-bff94accf579.metadata.json"
+#file="s3a://go01-demo/warehouse/tablespace/external/hive/fnb_bryce.db/metal/metadata/00008-94432d62-f212-40d7-ad82-16af39de508f.metadata.json"
 df_meta = spark.read.option("nullValue", "null") \
     .option("dateFormat", "yyyy-MM-dd") \
     .option("multiLine", "true") \
-    .json("s3a://go01-demo/warehouse/tablespace/external/hive/fnb_bryce.db/metal/metadata/*.metadata.json" )
+    .json(file)
 
 
 df_meta_filename = df_meta.withColumn("filename", input_file_name())
@@ -35,19 +36,16 @@ df_meta_filename = df_meta.withColumn("filename", input_file_name())
 # Show the DataFrame content
 #df_meta_filename.show(vertical=True, truncate=False)
 
-# Collect the data as a list of Row objects
-rows = df_meta_filename.collect()
 
-# Convert the Row objects to dictionaries
-data = [row.asDict() for row in rows]
+# Convert DataFrame to JSON strings
+df_json_strings = df_meta_filename.toJSON().collect()
 
-# Convert to a JSON string
-json_string = json.dumps(data)
+# Parse JSON strings into JSON objects
+df_json_objects = [json.loads(json_str) for json_str in df_json_strings]
 
-# If you want a JSON object instead of a string, you can do:
-json_chkpt = json.loads(json_string)
-
-for chkptdata in json_chkpt:
+CONTENT_MAP= {0: 'DATA', 1: 'POSITION DELETES', 2: 'EQUALITY DELETES' }
+STATUS_MAP= {0: 'EXISTING' ,1: 'ADDED', 2: 'DELETED'}
+for chkptdata in df_json_objects:
   curr_snap=chkptdata['current-snapshot-id']
 
   if(curr_snap == argv_snap):
@@ -63,47 +61,98 @@ for chkptdata in json_chkpt:
     print(f"Last Updated                               : {date_string}")
 
     print(f"Location                                   : {chkptdata['location']}")
+    print(f"bucketing_version                          : {chkptdata['properties']['bucketing_version']}")
+    print(f"serialization.format                       : {chkptdata['properties']['serialization.format']}")
 
-    print(f"storage_handler                            : {chkptdata['properties'][2]}")
-    print(f"iceberg.mr.table.format                    : {chkptdata['properties'][3]}")
-    print(f"iceberg.mr.write.format.default            : {chkptdata['properties'][4]}")
-    print(f"iceberg.mr.write.parquet.compression-codec : {chkptdata['properties'][5]}")
-    print(f"iceberg.mr.read.merge-on-read              : {chkptdata['properties'][6]}")
+    print(f"storage_handler                            : {chkptdata['properties']['storage_handler']}")
+    print(f"write.update.mode                          : {chkptdata['properties']['write.update.mode']}")
+
+    print(f"write.delete.mode                          : {chkptdata['properties']['write.delete.mode']}")
+    print(f"write.merge.mode                           : {chkptdata['properties']['write.merge.mode']}")
+    print(f"write.parquet.compression-codec            : {chkptdata['properties']['write.parquet.compression-codec']}")
 
 
     metadatalog = chkptdata['metadata-log']
     snapshotdata= chkptdata['snapshots']
 
     for snap in snapshotdata:
-      if(argv_snap == snap[4]):
+      if(argv_snap == snap['snapshot-id']):
 
       #  pprint.pprint(snap)
         print("==============================================================")
-        print(f"snapshot-id        : {snap[4]}")
-        print(f"parent-snapshot-id : {snap[1]}")
-        print(f"sequence-number    : {snap[3]}")
+        print(f"snapshot-id        : {snap['snapshot-id']}")
+        print(f"parent-snapshot-id : {snap['parent-snapshot-id']}")
+        print(f"sequence-number    : {snap['sequence-number']}")
         #print("A string map that summarizes the snapshot changes, including operation (see below)")
-        print(f"summary	           : {snap[5][7]}")
+        print(f"summary	          ")
+        print(f"  added-data-files             : {snap['summary']['added-data-files']}")
+        if 'added-delete-files'in snap['summary']:
+          print(f"' added-delete-files           : {snap['summary']['added-delete-files']}")
+        else:
+          print(f"' added-delete-files           : NONE")
+        
+        print(f"  added-files-size             : {snap['summary']['added-files-size']}")
+        if 'added-position-delete-files'in snap['summary']:
+          print(f"  added-position-delete-files  : {snap['summary']['added-position-delete-files']}")
+        else:
+          print(f"' added-position-delete-files  : NONE")          
+
+        if 'added-position-deletes'in snap['summary']:
+          print(f"  added-position-deletes       : {snap['summary']['added-position-deletes']}")
+        else:
+           print(f"  added-position-deletes       : NONE")
+        print(f"  added-records                : {snap['summary']['added-records']}")
+        print(f"  changed-partition-count      : {snap['summary']['changed-partition-count']}")
+        print(f"  operation                    : {snap['summary']['operation']}")
+        print(f"  total-data-files             : {snap['summary']['total-data-files']}")
+        print(f"  total-delete-files           : {snap['summary']['total-delete-files']}")
+        print(f"  total-equality-deletes       : {snap['summary']['total-equality-deletes']}")
+        print(f"  total-files-size             : {snap['summary']['total-files-size']}")
+        print(f"  total-position-deletes       : {snap['summary']['total-position-deletes']}")
+        print(f"  total-records                : {snap['summary']['total-records']}")
+        
         #print("ID of the table's current schema when the snapshot was created")
-        print(f"schema-id          : {snap[2]}")
+        #print(f"schema-id          : {snap['schema-id']}")
         #print("A timestamp when the snapshot was created, used for garbage collection and table inspection")
-        dt_object = datetime.fromtimestamp(snap[6]/1000)
+        dt_object = datetime.fromtimestamp(snap['timestamp-ms']/1000)
         date_string = dt_object.strftime('%Y-%m-%d %H:%M:%S.%f')
         print(f"timestamp-ms 	     : {date_string}")
         #print("The location of a manifest list for this snapshot that tracks manifest files with additional metadata")
-        print(f"manifest-list 	   : {snap[0]}")
-        avrodf = spark.read.format("avro").load(snap[0])
-        mplist= avrodf.select('manifest_path').collect()
-        print("manifest paths")
+        print(f"manifest-list 	   : {snap['manifest-list']}")
+        print("")
+        avrodf = spark.read.format("avro").load(snap['manifest-list'])
+        mplist= avrodf.select('manifest_path').toJSON().collect()
+
+        # Convert DataFrame to JSON strings
+        mplist_json_strings = mplist
+
+        # Parse JSON strings into JSON objects
+        mplist = [json.loads(json_str) for json_str in mplist_json_strings]        
+        
+        
+        print("Manifest Paths")
         for mp in mplist:
-          print(f" - {mp['manifest_path']}")
+          print(f"  - Manifest Path    :  {mp['manifest_path']}")
+
           mpdf = spark.read.format("avro").load(mp['manifest_path'])
-          dflist=mpdf.collect()
-          for df in dflist:
-            if(argv_snap == df['snapshot_id']):
-              print(f"  - snapshot_id: {df['snapshot_id']}")
-              print(f"  - data_file: {df['data_file']['file_path']}")
-              print("\n")
+          #dflist=mpdf.collect()
+
+          # Convert DataFrame to JSON strings
+          mpdf_json_strings = mpdf.toJSON().collect()
+
+          # Parse JSON strings into JSON objects
+          mpdf_json_objects = [json.loads(json_str) for json_str in mpdf_json_strings]
+          
+          
+
+          sorted_dflist = sorted(mpdf_json_objects, key=lambda x: x['snapshot_id'])
+          for df in sorted_dflist:
+            print(f"  - snapshot_id: {df['snapshot_id']}")
+            print(f"  - status.    : {STATUS_MAP[df['status']]}") 
+            print(f"  - Content    : {CONTENT_MAP[df['data_file']['content']]}")
+
+            print(f"  - data_file  : {df['data_file']['file_path']}")
+            print("\n")
         #avrodf.show(vertical=True, truncate=False)
         #avrodf.show(vertical=False, truncate=False)
       #  manifestdf= spark.read.format("avro").load(
@@ -112,3 +161,4 @@ for chkptdata in json_chkpt:
         #print(f"manifests          : {snap[]}")
 
         print("\n")
+
