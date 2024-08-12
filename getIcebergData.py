@@ -11,16 +11,38 @@ from datetime import datetime
 #import pandas as pd
 import numpy as np
 
+tablename='FNB_Bryce.metal'
+
 import cml.data_v1 as cmldata
 conn = cmldata.get_connection("go01-aw-dl")
 spark = conn.get_spark_session()
+# 'spark.sql.iceberg.handle-timestamp-without-timezone'
+spark.conf.set("spark.sql.iceberg.handle-timestamp-without-timezone", "true")
+spark.sql(f"select * from {tablename}.files").show(truncate=False)
+
+spark.sql(f"select snapshot_id from {tablename}.history").show(truncate=False)
+
+json_tableformat = spark.sql(f"describe formatted {tablename}").toJSON().collect()
+file_location = json.loads(json_tableformat[19])['data_type']
+tableinfo = json.loads(json_tableformat[21])['data_type']
+tableinfo_json=json.loads(tableinfo.replace('[','{"').replace('=','" : "').replace(',','", "').replace(']','"}'))
+
+current_snapshot_id = tableinfo_json['current-snapshot-id']
+
+#spark.sparkContext.getConf().getAll()
+  #"tag", first_snapshot
+  # get a snapshot so we always train with the same data
+#data = spark.read\
+#.format("iceberg")\
+#.load(f"{tablename}").toPandas()
+
 
 from pyspark.sql.functions import input_file_name
-
-argv_snap=3027088866001259944
+argv_snap= 5135327718516679476
+#argv_snap=5049826933335619187
 #argv_snap=5551603955198434466
-file="s3a://go01-demo/warehouse/tablespace/external/hive/jing_airlines.db/flights/metadata/00005-09c2e8cd-1461-4388-9058-bff94accf579.metadata.json"
-#file="s3a://go01-demo/warehouse/tablespace/external/hive/fnb_bryce.db/metal/metadata/00008-94432d62-f212-40d7-ad82-16af39de508f.metadata.json"
+#file="s3a://go01-demo/warehouse/tablespace/external/hive/jing_airlines.db/flights/metadata/00005-09c2e8cd-1461-4388-9058-bff94accf579.metadata.json"
+file="s3a://go01-demo/warehouse/tablespace/external/hive/fnb_bryce.db/metal/metadata/00034-3321592c-426f-4dde-ada0-7df5562a08dc.metadata.json"
 df_meta = spark.read.option("nullValue", "null") \
     .option("dateFormat", "yyyy-MM-dd") \
     .option("multiLine", "true") \
@@ -161,4 +183,3 @@ for chkptdata in df_json_objects:
         #print(f"manifests          : {snap[]}")
 
         print("\n")
-
